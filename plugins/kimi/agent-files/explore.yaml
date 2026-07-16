@@ -3,14 +3,15 @@ agent:
   name: kimi-explore
   extend: default
   system_prompt_path: ./explore-system.md
-  exclude_tools:
-    - "kimi_cli.tools.file:WriteFile"
-    - "kimi_cli.tools.file:StrReplaceFile"
-    - "kimi_cli.tools.shell:Shell"
-    - "kimi_cli.tools.agent:Agent"
-    - "kimi_cli.tools.todo:SetTodoList"
-    - "kimi_cli.tools.plan.enter:EnterPlanMode"
-    - "kimi_cli.tools.plan:ExitPlanMode"
-    - "kimi_cli.tools.background:TaskList"
-    - "kimi_cli.tools.background:TaskOutput"
-    - "kimi_cli.tools.background:TaskStop"
+  # Allow-list (fail-CLOSED), not exclude_tools (fail-open). Used by the
+  # read-only commands /kimi:explore, /kimi:review, /kimi:challenge, which run
+  # under `--yolo` in the user's repo — the ONLY thing keeping them read-only
+  # is this tool set. A deny-list would silently grant any NEW tool Kimi adds
+  # in a future version (e.g. a new patch/move/delete or MCP write tool), so we
+  # grant ONLY read tools here. No WriteFile/StrReplaceFile/Shell/Agent, and no
+  # web egress (a read-only codebase review shouldn't phone out).
+  tools:
+    - "kimi_cli.tools.file:ReadFile"
+    - "kimi_cli.tools.file:ReadMediaFile"
+    - "kimi_cli.tools.file:Glob"
+    - "kimi_cli.tools.file:Grep"

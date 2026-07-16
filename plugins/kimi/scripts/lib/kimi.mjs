@@ -3,6 +3,7 @@ import { createWriteStream } from 'node:fs';
 import { mkdir, writeFile, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { scanTextForSecrets } from './secrets.mjs';
 
 /**
  * Wrap the local `kimi` CLI with retry logic and JSONL capture.
@@ -28,6 +29,16 @@ function getPluginRoot() {
  * @returns {Promise<{sessionId: string, exitCode: number, retries: number, outputFile: string, finalMessage?: string}>}
  */
 export async function invokeKimi(opts) {
+  // Refuse to ship a prompt carrying a credential to the provider (Moonshot/
+  // Kimi is a third party). The assembled prompt includes review diffs and the
+  // CLAUDE.md/AGENTS.md context preamble, which can contain secrets.
+  const secretHits = scanTextForSecrets(opts.prompt);
+  if (secretHits.length && !process.env.KIMI_ALLOW_SECRETS) {
+    throw new Error(
+      `refusing to send prompt to kimi: possible secret(s) detected — ${secretHits.join(', ')}. ` +
+      'Remove them, or set KIMI_ALLOW_SECRETS=1 to override.'
+    );
+  }
   const sessionId = opts.sessionId || crypto.randomUUID();
   const sessDir = path.join(getPluginRoot(), 'sessions', sessionId);
   await mkdir(sessDir, { recursive: true });
