@@ -48,6 +48,11 @@ async function runDispatch(opts) {
   const repoPath = await findRepoRoot();
 
   const prompt = opts.prompt;
+  // Guard against parser artifacts (a --prompt whose value got swallowed as a
+  // flag arrives as boolean true) — never ship a non-string prompt to kimi.
+  if (typeof prompt !== 'string' || !prompt.trim()) {
+    return { status: 'failed', reason: 'invalid-prompt', error: '--prompt must be a non-empty string', exitCode: 1 };
+  }
   const agentFile = path.resolve(opts.agent_file);
   const background = opts.background === true || opts.background === 'true';
   const model = opts.model || '';

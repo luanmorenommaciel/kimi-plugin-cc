@@ -63,15 +63,22 @@ Exit codes (dispatch):
   process.exit(1);
 }
 
+// A token is only an OPTION if it looks like one: `--` followed by a letter.
+// A value that merely STARTS with dashes (e.g. a --prompt whose text begins
+// with YAML frontmatter `---`) must be consumed as the value, not swallowed
+// as a flag — that bug turned `--prompt "$TASK"` into `prompt: true` and
+// shipped the literal string "true" to kimi.
+const OPTION_RE = /^--[a-zA-Z]/;
+
 function parseArgs(argv) {
   const args = {};
   const positional = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a.startsWith('--')) {
+    if (OPTION_RE.test(a)) {
       const key = a.slice(2).replace(/-/g, '_');
       const next = argv[i + 1];
-      if (next !== undefined && !next.startsWith('--')) {
+      if (next !== undefined && !OPTION_RE.test(next)) {
         args[key] = next;
         i++;
       } else {
