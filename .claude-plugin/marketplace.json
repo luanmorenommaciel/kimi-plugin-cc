@@ -5,14 +5,14 @@
     "email": "luan.moreno@owshq.com"
   },
   "metadata": {
-    "description": "Kimi plugin for Claude Code — code review, exploration, and task delegation with 16 broker commands and MCP integrations.",
-    "version": "0.3.4"
+    "description": "Kimi plugin for Claude Code — code review, exploration, and task delegation with 21 broker commands and MCP integrations.",
+    "version": "0.4.0"
   },
   "plugins": [
     {
       "name": "kimi",
       "description": "Use Kimi from Claude Code to review code, explore codebases, or delegate tasks.",
-      "version": "0.3.4",
+      "version": "0.4.0",
       "author": {
         "name": "Luan Moreno",
         "email": "luan.moreno@owshq.com"

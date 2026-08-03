@@ -1,8 +1,18 @@
 import { writeFile, mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 
-export async function warn(module, error, severity = 'warning') {
-  const repoPath = process.cwd();
+/**
+ * Append a warning line to <repoPath>/.kimi/state/warnings.jsonl.
+ *
+ * @param {string} module
+ * @param {Error|string} error
+ * @param {string} [severity='warning']
+ * @param {string} [repoPath] - repo whose .kimi/state receives the warning.
+ *   Callers that know the session's repo (close handler, reconciliation)
+ *   MUST pass it: the broker may be launched from any cwd (including a
+ *   detached supervisor), and warnings must land with the session's repo.
+ */
+export async function warn(module, error, severity = 'warning', repoPath = process.cwd()) {
   const warnDir = path.join(repoPath, '.kimi', 'state');
   await mkdir(warnDir, { recursive: true });
 

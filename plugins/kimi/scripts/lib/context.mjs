@@ -2,7 +2,12 @@ import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { matchGlob } from './glob.mjs';
 
-const CONTEXT_CAP_BYTES = 8 * 1024; // 8KB total cap
+// Total context-preamble cap. Defaults to 16KB (sized for K3's 1M context);
+// override per dispatch with KIMI_CTX_CAP_CONTEXT_BYTES (e.g. back down to
+// 8192 for 256K tiers).
+function contextCapBytes() {
+  return Number(process.env.KIMI_CTX_CAP_CONTEXT_BYTES || 16 * 1024);
+}
 
 /**
  * Discover project context files and assemble a preamble.
@@ -32,23 +37,24 @@ export async function discoverContext(touchesPaths, repoRoot) {
   for (const rf of ruleFiles) {
     const text = await readTextSafe(rf);
     if (!text) continue;
-    const scope = extractScope(text, rf);
-    if (scope && touchesPaths.some((tp) => matchScopedGlob(tp, scope))) {
+    const scopes = extractScopes(text, rf);
+    if (scopes.length > 0 && touchesPaths.some((tp) => scopes.some((s) => matchScopedGlob(tp, s)))) {
       const truncated = truncateRule(text);
       blocks.push({ title: path.relative(repoRoot, rf), content: truncated });
     }
   }
 
   // Assemble with cap
+  const capBytes = contextCapBytes();
   let assembled = '=== PROJECT CONTEXT (read-only reference) ===\n\n';
   let used = assembled.length;
 
   for (const b of blocks) {
     const header = `--- ${b.title} ---\n`;
     const piece = header + b.content + '\n\n';
-    if (used + piece.length > CONTEXT_CAP_BYTES) {
+    if (used + piece.length > capBytes) {
       // Truncate content to fit
-      const remaining = CONTEXT_CAP_BYTES - used - header.length - 4;
+      const remaining = capBytes - used - header.length - 4;
       if (remaining > 40) {
         assembled += header + b.content.slice(0, remaining) + '...\n\n';
       }
@@ -80,26 +86,28 @@ async function listMdFilesSafe(dir) {
   }
 }
 
-function extractScope(text, filepath) {
-  // Try frontmatter globs: ---\nglobs:\n  - "src/**"\n---
+function extractScopes(text, filepath) {
+  // Frontmatter globs: ---\nglobs:\n  - "src/**"\n  - "lib/**"\n---
+  // ALL globs apply (previously only the first was used).
   const fm = text.match(/---\s*\n([\s\S]*?)\n---/);
   if (fm) {
     const globsMatch = fm[1].match(/globs:\s*\n((?:\s+-\s+.*\n?)+)/);
     if (globsMatch) {
-      const lines = globsMatch[1].split('\n').filter((l) => l.trim().startsWith('-'));
-      for (const line of lines) {
-        const g = line.replace(/^\s+-\s+/, '').trim().replace(/^["']|["']$/g, '');
-        if (g) return g;
-      }
+      const scopes = globsMatch[1]
+        .split('\n')
+        .filter((l) => l.trim().startsWith('-'))
+        .map((line) => line.replace(/^\s+-\s+/, '').trim().replace(/^["']|["']$/g, ''))
+        .filter(Boolean);
+      if (scopes.length > 0) return scopes;
     }
   }
   // Fallback: filename-based (e.g., "src-core-parsers.md" -> "src/core/parsers/**")
   const base = path.basename(filepath, '.md');
   if (base.includes('-')) {
     const derived = base.replace(/-/g, '/');
-    if (!derived.includes('*')) return derived + '/**';
+    if (!derived.includes('*')) return [derived + '/**'];
   }
-  return null;
+  return [];
 }
 
 function matchScopedGlob(filePath, glob) {

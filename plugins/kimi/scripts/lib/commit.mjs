@@ -52,7 +52,21 @@ export async function commitWork(repoPath, sessionId, meta, ctx = {}) {
   }
 
   const touches = Array.isArray(meta.touches_paths) ? meta.touches_paths.filter(Boolean) : [];
-  const addArgs = touches.length > 0 ? ['add', '--', ...touches] : ['add', '-A'];
+  let addArgs;
+  if (touches.length > 0) {
+    addArgs = ['add', '--', ...touches];
+  } else if (meta.baseline_sha) {
+    // No touches_paths: stage ONLY what changed since the session baseline.
+    // `git add -A` here would sweep unrelated user edits into Kimi's commit.
+    const changed = await git(['diff', '--name-only', meta.baseline_sha, '--'], repoPath);
+    const paths = changed.stdout.split('\n').map((s) => s.trim()).filter(Boolean);
+    if (paths.length === 0) {
+      return { committed: false, commit_sha: null, reason: 'no tracked changes since baseline' };
+    }
+    addArgs = ['add', '--', ...paths];
+  } else {
+    addArgs = ['add', '-A'];
+  }
   const add = await git(addArgs, repoPath);
   if (add.code !== 0) {
     return { committed: false, commit_sha: null, reason: `git add failed: ${add.stderr.trim()}` };

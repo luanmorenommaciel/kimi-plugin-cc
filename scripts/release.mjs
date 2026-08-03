@@ -7,21 +7,32 @@
  *
  * Checks performed:
  *   1. Git working tree clean (no uncommitted changes)
- *   2. All .mjs files parse (syntax lint)
- *   3. Unit + integration tests pass
- *   4. Plugin manifest validation (plugin.json, required files)
- *   5. Broker CLI smoke test (all commands respond)
- *   6. Agent file validation (YAML exists, system.md exists)
- *   7. Command file validation (all .md commands present)
- *   8. npm pack dry-run (verify package contents)
- *   9. (Optional) Version bump + git tag + npm publish
+ *   2. Version consistency across package.json, plugin.json,
+ *      marketplace.json, kimi.plugin.json, and CHANGELOG.md
+ *   3. All .mjs files parse (syntax lint)
+ *   4. Unit + integration tests pass
+ *   5. Plugin manifest validation (plugin.json, required files)
+ *   6. Broker CLI smoke test (usage lists every registered command)
+ *   7. Role prompt validation (plugins/kimi/roles/*.md)
+ *   8. Command file validation (all .md commands present)
+ *   9. kimi-code plugin validation (kimi.plugin.json pointers resolve)
+ *  10. npm pack dry-run (verify package contents)
+ *  11. (Optional) Version bump + git tag + npm publish
  */
 
 import { execFile } from 'node:child_process';
-import { readFile, readdir, stat, access } from 'node:fs/promises';
+import { readFile, readdir, writeFile, rename, access } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  readVersionFiles,
+  findVersionDrift,
+  computeVersionBump,
+  parseRegisteredCommands,
+  parseUsageCommands,
+  FALLBACK_BROKER_COMMANDS,
+} from './lib/release-lib.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -77,7 +88,8 @@ async function checkLint() {
 }
 
 async function checkTests() {
-  const { code, stderr } = await run('node', ['--test', '--test-concurrency=1', 'tests/**/*.test.mjs'], { timeout: 120000 });
+  const timeout = Number(process.env.RELEASE_TEST_TIMEOUT_MS) || 300000;
+  const { code, stderr } = await run('node', ['--test', '--test-concurrency=1'], { timeout });
   if (code !== 0) {
     throw new Error('Tests failed: ' + stderr);
   }
@@ -98,13 +110,15 @@ async function checkPluginManifest() {
 async function checkRequiredFiles() {
   const required = [
     'plugins/kimi/scripts/broker.mjs',
-    'plugins/kimi/agent-files/coder.yaml',
-    'plugins/kimi/agent-files/coder-system.md',
-    'plugins/kimi/agent-files/explore.yaml',
-    'plugins/kimi/agent-files/explore-system.md',
-    'plugins/kimi/agent-files/plan-sub.yaml',
+    'plugins/kimi/scripts/lib/kimi-cli.mjs',
+    'plugins/kimi/scripts/lib/roles.mjs',
+    'plugins/kimi/roles/coder.md',
+    'plugins/kimi/roles/explore.md',
     'plugins/kimi/agents/kimi-delegate.md',
     'plugins/kimi/.claude-plugin/plugin.json',
+    'plugins/kimi-code/skills/crank-loop/SKILL.md',
+    '.claude-plugin/marketplace.json',
+    'kimi.plugin.json',
     '.env.example',
     'README.md',
     'CHANGELOG.md',
@@ -134,30 +148,41 @@ async function checkBrokerSmoke() {
     throw new Error('Broker did not print usage on no args');
   }
 
-  // Verify all registered commands are listed in usage
-  const usageCommands = ['dispatch', 'status', 'result', 'cancel', 'watch', 'report', 'telemetry', 'checkpoint', 'monitor', 'warnings', 'batch', 'next'];
-  for (const cmd of usageCommands) {
-    if (!stdout.includes(cmd)) {
+  // Verify every registered command is listed in usage. The expected list
+  // is derived from the command registry in lib/commands.mjs (falling back
+  // to a static list if the registry cannot be read).
+  const expected = await expectedBrokerCommands();
+  const listed = new Set(parseUsageCommands(stdout));
+  for (const cmd of expected) {
+    if (!listed.has(cmd)) {
       throw new Error(`Usage text missing command: ${cmd}`);
     }
   }
 }
 
+async function expectedBrokerCommands() {
+  try {
+    const src = await readFile(path.join(ROOT, 'plugins', 'kimi', 'scripts', 'lib', 'commands.mjs'), 'utf-8');
+    const commands = parseRegisteredCommands(src);
+    if (commands.length > 0) return commands;
+  } catch {
+    // fall through to the static list
+  }
+  return FALLBACK_BROKER_COMMANDS;
+}
+
 async function checkAgentFiles() {
-  const agentsDir = path.join(ROOT, 'plugins', 'kimi', 'agent-files');
-  const entries = await readdir(agentsDir);
-  const yamlFiles = entries.filter((f) => f.endsWith('.yaml'));
-  const mdFiles = entries.filter((f) => f.endsWith('.md'));
-
-  for (const yf of yamlFiles) {
-    // Sub-agents that use `extend:` inherit system.md from parent
-    const content = await readFile(path.join(agentsDir, yf), 'utf-8');
-    if (content.includes('extend:')) continue;
-
-    const base = yf.replace('.yaml', '');
-    const systemMd = base + '-system.md';
-    if (!mdFiles.includes(systemMd) && !entries.includes(systemMd)) {
-      throw new Error(`Agent ${yf} missing corresponding ${systemMd}`);
+  // Roles are Markdown system prompts composed into the dispatch prompt
+  // (Kimi Code 0.x has no YAML agent-file mechanism).
+  const rolesDir = path.join(ROOT, 'plugins', 'kimi', 'roles');
+  const entries = await readdir(rolesDir);
+  for (const role of ['coder.md', 'explore.md']) {
+    if (!entries.includes(role)) {
+      throw new Error(`Role prompt missing: plugins/kimi/roles/${role}`);
+    }
+    const content = await readFile(path.join(rolesDir, role), 'utf-8');
+    if (!content.includes('${KIMI_WORK_DIR}')) {
+      throw new Error(`Role prompt ${role} must reference \${KIMI_WORK_DIR}`);
     }
   }
 }
@@ -179,6 +204,32 @@ async function checkCommandFiles() {
   }
 }
 
+async function checkKimiCodePlugin() {
+  // Root kimi.plugin.json points at the kimi-code plugin's commands/skills
+  // directories — validate the pointers resolve to real paths.
+  const manifestPath = path.join(ROOT, 'kimi.plugin.json');
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf-8'));
+
+  for (const field of ['commands', 'skills']) {
+    if (typeof manifest[field] !== 'string') {
+      throw new Error(`kimi.plugin.json missing '${field}' pointer`);
+    }
+    if (!await fileExists(path.join(ROOT, manifest[field]))) {
+      throw new Error(`kimi.plugin.json '${field}' does not resolve: ${manifest[field]}`);
+    }
+  }
+
+  const commandsDir = path.join(ROOT, manifest.commands);
+  const mdFiles = (await readdir(commandsDir)).filter((f) => f.endsWith('.md'));
+  if (mdFiles.length === 0) {
+    throw new Error('plugins/kimi-code/commands has no .md command files');
+  }
+
+  if (!await fileExists(path.join(ROOT, 'plugins', 'kimi-code', 'skills', 'crank-loop', 'SKILL.md'))) {
+    throw new Error('Missing plugins/kimi-code/skills/crank-loop/SKILL.md');
+  }
+}
+
 async function checkNpmPack() {
   const { code, stdout, stderr } = await run('npm', ['pack', '--dry-run'], { allowError: true });
   if (code !== 0) {
@@ -187,7 +238,7 @@ async function checkNpmPack() {
 
   // Verify key files would be included
   const packOutput = stdout + stderr;
-  const mustInclude = ['broker.mjs', 'commands.mjs', 'coder.yaml', 'plugin.json', '.env.example'];
+  const mustInclude = ['broker.mjs', 'commands.mjs', 'coder.md', 'plugin.json', '.env.example'];
   const missing = mustInclude.filter((f) => !packOutput.includes(f));
   if (missing.length > 0) {
     throw new Error('npm pack would exclude: ' + missing.join(', '));
@@ -195,19 +246,20 @@ async function checkNpmPack() {
 }
 
 async function checkVersionConsistency() {
-  const pkg = JSON.parse(await readFile(path.join(ROOT, 'package.json'), 'utf-8'));
-  const manifest = JSON.parse(await readFile(path.join(ROOT, 'plugins', 'kimi', '.claude-plugin', 'plugin.json'), 'utf-8'));
-
-  if (pkg.version !== manifest.version) {
-    throw new Error(`Version mismatch: package.json=${pkg.version}, plugin.json=${manifest.version}`);
+  const versionFiles = await readVersionFiles(ROOT);
+  const drift = findVersionDrift(versionFiles);
+  if (drift.length > 0) {
+    const details = drift.map((d) => `${d.rel}=${d.version}`).join(', ');
+    throw new Error(`Version mismatch (expected ${drift[0].reference}): ${details}`);
   }
 
+  const version = versionFiles[0].versions[0];
   const changelog = await readFile(path.join(ROOT, 'CHANGELOG.md'), 'utf-8');
-  if (!changelog.includes(`## ${pkg.version}`)) {
-    throw new Error(`CHANGELOG.md missing section for v${pkg.version}`);
+  if (!changelog.includes(`## ${version}`)) {
+    throw new Error(`CHANGELOG.md missing section for v${version}`);
   }
 
-  return pkg.version;
+  return version;
 }
 
 // ------------------------------------------------------------------
@@ -222,24 +274,22 @@ function bumpVersion(current, type) {
 }
 
 async function doBump(newVersion) {
-  // package.json
-  const pkgPath = path.join(ROOT, 'package.json');
-  const pkg = JSON.parse(await readFile(pkgPath, 'utf-8'));
-  pkg.version = newVersion;
-  await writeFileAtomic(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
+  // Compute every new file content first; only start writing once all four
+  // files parsed and bumped cleanly, so a failure mid-bump writes nothing.
+  const versionFiles = await readVersionFiles(ROOT);
+  const bumped = computeVersionBump(versionFiles, newVersion);
 
-  // plugin.json
-  const manifestPath = path.join(ROOT, 'plugins', 'kimi', '.claude-plugin', 'plugin.json');
-  const manifest = JSON.parse(await readFile(manifestPath, 'utf-8'));
-  manifest.version = newVersion;
-  await writeFileAtomic(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
+  for (const file of bumped) {
+    await writeFileAtomic(file.abs, file.content);
+  }
 
-  log('Bump', `Version bumped to ${newVersion}`, 'pass');
+  log('Bump', `Version bumped to ${newVersion} (${bumped.map((f) => f.rel).join(', ')})`, 'pass');
 }
 
 async function writeFileAtomic(filePath, content) {
-  const { writeFile } = await import('node:fs/promises');
-  await writeFile(filePath, content);
+  const tmp = `${filePath}.${process.pid}.tmp`;
+  await writeFile(tmp, content);
+  await rename(tmp, filePath);
 }
 
 // ------------------------------------------------------------------
@@ -272,6 +322,7 @@ async function main() {
     { name: 'Broker smoke test', fn: checkBrokerSmoke },
     { name: 'Agent files', fn: checkAgentFiles },
     { name: 'Command files', fn: checkCommandFiles },
+    { name: 'kimi-code plugin', fn: checkKimiCodePlugin },
     { name: 'npm pack', fn: checkNpmPack },
   ];
 
@@ -320,7 +371,15 @@ async function main() {
     if (dryRun) {
       log('Tag', 'Skipped (dry-run)', 'warn');
     } else {
-      await run('git', ['add', '-A']);
+      // Stage only the version-bearing files + CHANGELOG so unrelated
+      // dirty files in the working tree are not swept into the commit.
+      await run('git', ['add', '--',
+        'package.json',
+        'plugins/kimi/.claude-plugin/plugin.json',
+        '.claude-plugin/marketplace.json',
+        'kimi.plugin.json',
+        'CHANGELOG.md',
+      ]);
       await run('git', ['commit', '-m', `release: v${version}`]);
       await run('git', ['tag', `v${version}`]);
       log('Tag', `Created tag v${version}`, 'pass');

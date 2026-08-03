@@ -1,5 +1,9 @@
 # The Kimi Crank Loop — Reproducible Blueprint
 
+> **Historical record (2026-08):** this is the v0.3.x-era blueprint. The
+> current repo is 0.4.0 — see `CHANGELOG.md` and `README.md` for what
+> changed. The body below is kept as-is for reference.
+
 > **Goal:** A reproducible, organized process to develop kimi-plugin-cc to
 > production-grade perfection for autonomous, Claude-Code-supervised Kimi
 > cranking. This document is the blueprint other workstreams replicate.

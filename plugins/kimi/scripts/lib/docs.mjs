@@ -1,8 +1,13 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { warn } from './warn.mjs';
+import { context7Docs } from './context7.mjs';
 
-const DOCS_CAP_BYTES = 4 * 1024; // 4KB cap for external docs
+// 8KB default cap for external docs (K3 1M context); override with
+// KIMI_CTX_CAP_DOCS_BYTES.
+function docsCapBytes() {
+  return Number(process.env.KIMI_CTX_CAP_DOCS_BYTES || 8 * 1024);
+}
 
 const API_SCHEMA = {
   type: 'object',
@@ -60,10 +65,23 @@ export async function extractPackages(filePaths) {
 }
 
 /**
- * Try Firecrawl structured extraction first, then Tavily search fallback.
+ * Library docs lookup. Provider order: Context7 (versioned, LLM-optimized
+ * docs — default), then Firecrawl structured extraction, then Tavily search.
+ *
+ * @param {string} packageName
+ * @param {object} [opts]
+ * @param {string} [opts.provider] - 'context7' | 'firecrawl' (default: $KIMI_DOCS_PROVIDER or 'context7')
  */
-export async function searchLibraryDocs(packageName) {
-  // 1. Try Firecrawl structured extraction on known docs URL
+export async function searchLibraryDocs(packageName, opts = {}) {
+  const provider = opts.provider || process.env.KIMI_DOCS_PROVIDER || 'context7';
+
+  // 1. Context7 (default provider) — falls through when it has nothing.
+  if (provider === 'context7') {
+    const docs = await context7Docs(packageName);
+    if (docs) return docs;
+  }
+
+  // 2. Try Firecrawl structured extraction on known docs URL
   const fcKey = process.env.FIRECRAWL_API_KEY;
   if (fcKey) {
     const docsUrl = await resolveDocsUrl(packageName);
@@ -79,7 +97,7 @@ export async function searchLibraryDocs(packageName) {
     }
   }
 
-  // 2. Fallback to Tavily search
+  // 3. Fallback to Tavily search
   return tavilySearchDocs(packageName);
 }
 
@@ -173,7 +191,7 @@ function formatExtracted(json) {
  * @param {string} repoRoot
  * @returns {Promise<string>}
  */
-export async function discoverLibraryDocs(touchesPaths, repoRoot) {
+export async function discoverLibraryDocs(touchesPaths, repoRoot, opts = {}) {
   const absPaths = touchesPaths.map((p) => path.join(repoRoot, p));
   const packages = await extractPackages(absPaths);
   if (packages.size === 0) return '';
@@ -181,7 +199,7 @@ export async function discoverLibraryDocs(touchesPaths, repoRoot) {
   const blocks = [];
   for (const pkg of packages) {
     if (pkg.startsWith('.') || pkg.startsWith('/')) continue;
-    const docs = await searchLibraryDocs(pkg);
+    const docs = await searchLibraryDocs(pkg, opts);
     if (docs) {
       blocks.push(`--- ${docs.title} ---\n${docs.content.slice(0, 1200)}${docs.content.length > 1200 ? '...' : ''}\nURL: ${docs.url}\n`);
     }
@@ -193,7 +211,7 @@ export async function discoverLibraryDocs(touchesPaths, repoRoot) {
   let used = assembled.length;
 
   for (const b of blocks) {
-    if (used + b.length > DOCS_CAP_BYTES) {
+    if (used + b.length > docsCapBytes()) {
       assembled += '... (truncated)\n';
       break;
     }

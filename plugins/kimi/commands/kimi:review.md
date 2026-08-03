@@ -32,7 +32,7 @@ allowed-tools: [Bash, Read, Task]
    ```
    Bash("node plugins/kimi/scripts/broker.mjs dispatch \
      --prompt 'Review this diff: ...' \
-     --agent-file '$(pwd)/plugins/kimi/agent-files/explore.yaml' \
+     --role explore \
      --mode review \
      [--background]")
    ```
@@ -48,12 +48,12 @@ allowed-tools: [Bash, Read, Task]
 {
   "summary": "string",
   "findings": [
-    {"severity": "info|warning|citical", "file": "string", "line": 42, "message": "string", "suggestion": "string"}
+    {"severity": "info|warning|critical", "file": "string", "line": 42, "message": "string", "suggestion": "string"}
   ]
 }
 ```
 
 ## Notes
 
-- Uses `explore.yaml` → read-only security boundary.
+- Uses `--role explore` → read-only by prompt contract (the `roles/explore.md` prompt forbids writes and mutating shell commands).
 - Validates output against JSON schema for consistency.

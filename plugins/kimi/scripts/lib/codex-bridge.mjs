@@ -1,13 +1,18 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawnSync } from 'node:child_process';
 import { writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 
-const VERDICTS = ['APPROVE', 'CONCERN', 'DIFFERENT_APPROACH', 'REVISE', 'REJECT'];
+const VERDICTS = ['APPROVE', 'APPROVE_COMMIT', 'CONCERN', 'DIFFERENT_APPROACH', 'REVISE', 'REJECT'];
 
 function detectCodexCmd() {
   if (process.env.CODEX_CMD) return process.env.CODEX_CMD;
-  // Try common Codex CLI entrypoints
-  const candidates = ['codex', 'npx codex', 'codex-cli'];
+  // Probe common Codex CLI entrypoints in order; fall back to 'codex' and let
+  // codexReview degrade to SKIP when it is not actually installed.
+  const candidates = ['codex', 'codex-cli'];
+  for (const c of candidates) {
+    const r = spawnSync('which', [c], { stdio: 'ignore' });
+    if (r.status === 0) return c;
+  }
   return candidates[0];
 }
 
@@ -42,12 +47,14 @@ export async function codexReview(prompt, opts = {}) {
     };
   }
 
-  // Parse verdict from final line
+  // Parse verdict from final line. Longest-first so APPROVE_COMMIT is not
+  // swallowed by the APPROVE substring; match at line end, not anywhere.
   let verdict = 'CONCERN';
   const lines = raw.trim().split('\n');
+  const byLength = [...VERDICTS].sort((a, b) => b.length - a.length);
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i].trim();
-    const v = VERDICTS.find((x) => line.includes(`VERDICT: ${x}`) || line === x);
+    const v = byLength.find((x) => line === x || line.endsWith(`VERDICT: ${x}`));
     if (v) {
       verdict = v;
       break;

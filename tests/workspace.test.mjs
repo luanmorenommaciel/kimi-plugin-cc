@@ -7,7 +7,6 @@ import assert from 'node:assert/strict';
 import { makeTempDir, cleanupTempDir } from './helpers.mjs';
 import {
   findRepoRoot,
-  getRepoSessionFile,
   readRepoSession,
   writeRepoSession,
 } from '../plugins/kimi/scripts/lib/workspace.mjs';
@@ -32,11 +31,6 @@ test('findRepoRoot finds git repo root', async () => {
   } finally {
     cleanupTempDir(tmp);
   }
-});
-
-test('getRepoSessionFile returns correct path', async () => {
-  const file = await getRepoSessionFile('/my/repo');
-  assert.equal(file, path.join('/my/repo', '.kimi', '.session'));
 });
 
 test('writeRepoSession and readRepoSession round-trip', async () => {

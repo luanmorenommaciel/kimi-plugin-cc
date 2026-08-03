@@ -1,7 +1,0 @@
-version: 1
-agent:
-  extend: ./explore.yaml
-  system_prompt_args:
-    ROLE_ADDITIONAL: |
-      You are now running as an explore subagent. Focus on fast read-only
-      codebase exploration: searching, reading, and summarizing.

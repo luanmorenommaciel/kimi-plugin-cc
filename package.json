@@ -1,10 +1,10 @@
 {
   "name": "kimi-plugin-cc",
-  "version": "0.3.4",
+  "version": "0.4.0",
   "description": "Claude Code plugin for Kimi delegation — code review, exploration, and task execution",
   "type": "module",
   "scripts": {
-    "test": "node --test --test-concurrency=1 tests/**/*.test.mjs",
+    "test": "node --test --test-concurrency=1",
     "smoke": "bash tests/smoke.sh",
     "lint": "node scripts/lint.mjs",
     "release": "node scripts/release.mjs",
@@ -18,6 +18,7 @@
     "plugins/",
     ".claude-plugin/",
     "docs/",
+    "kimi.plugin.json",
     ".env.example",
     "LICENSE",
     "NOTICE",

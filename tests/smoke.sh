@@ -22,7 +22,7 @@ echo "Working in: $TMP_WORKDIR"
 echo "--- Test 1: explore agent (read-only) ---"
 RESULT="$($BROKER dispatch \
   --prompt "List all files in the current directory" \
-  --agent-file "${PLUGIN_DIR}/plugins/kimi/agent-files/explore.yaml" \
+  --role explore \
   --mode explore 2>&1)" || true
 
 SESSION_ID="$(echo "$RESULT" | python3 -c 'import sys,json; print(json.loads(sys.stdin.read()).get("sessionId",""))' 2>/dev/null || true)"
@@ -47,7 +47,7 @@ echo "--- Test 2: coder agent (write) ---"
 TASK_CONTENT="$(cat "$FIXTURE")"
 RESULT2="$($BROKER dispatch \
   --prompt "$TASK_CONTENT" \
-  --agent-file "${PLUGIN_DIR}/plugins/kimi/agent-files/coder.yaml" \
+  --role coder \
   --mode crank 2>&1)" || true
 
 SESSION_ID2="$(echo "$RESULT2" | python3 -c 'import sys,json; print(json.loads(sys.stdin.read()).get("sessionId",""))' 2>/dev/null || true)"

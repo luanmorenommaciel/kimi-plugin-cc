@@ -98,3 +98,52 @@ test('touches_paths scopes the add to listed files only', async () => {
     cleanupTempDir(dir);
   }
 });
+
+test('empty touches_paths stages exactly the paths changed since baseline_sha', async () => {
+  const dir = initRepo();
+  try {
+    // Baseline: one tracked file committed.
+    fs.writeFileSync(path.join(dir, 'kimi-target.txt'), 'v1\n');
+    execFileSync('git', ['add', '-A'], { cwd: dir });
+    execFileSync('git', ['commit', '-q', '-m', 'baseline'], { cwd: dir });
+    const baseline = head(dir);
+
+    // Kimi's own work (tracked change since baseline).
+    fs.writeFileSync(path.join(dir, 'kimi-target.txt'), 'v2\n');
+    // An unrelated untracked file in the same tree — `git add -A` would
+    // sweep it in; the baseline-scoped add must not.
+    fs.writeFileSync(path.join(dir, 'user-notes.txt'), 'untracked\n');
+
+    const r = await commitWork(dir, 'abcdef12-0000', { auto_commit_policy: 'on', baseline_sha: baseline }, { exitCode: 0, retries: 0 });
+    assert.equal(r.committed, true);
+
+    // The commit contains ONLY the baseline-changed tracked path.
+    const committedFiles = execFileSync('git', ['show', '--name-only', '--format=', 'HEAD'], { cwd: dir, encoding: 'utf-8' });
+    assert.match(committedFiles, /kimi-target\.txt/);
+    assert.doesNotMatch(committedFiles, /user-notes\.txt/);
+
+    // The untracked file survives, still untracked.
+    const status = execFileSync('git', ['status', '--porcelain'], { cwd: dir, encoding: 'utf-8' });
+    assert.match(status, /^\?\? user-notes\.txt/m);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('empty touches_paths with only untracked changes since baseline skips the commit', async () => {
+  const dir = initRepo();
+  try {
+    // Only an untracked file — `git diff --name-only <baseline> --` sees
+    // nothing, so nothing is staged and the commit is skipped rather than
+    // sweeping the untracked file in.
+    fs.writeFileSync(path.join(dir, 'stray.txt'), 'untracked\n');
+    const before = head(dir);
+    const r = await commitWork(dir, 'abcdef12-0000', { auto_commit_policy: 'on', baseline_sha: before }, { exitCode: 0, retries: 0 });
+    assert.equal(r.committed, false);
+    assert.match(r.reason, /no tracked changes since baseline/);
+    assert.equal(head(dir), before);
+    assert.equal(fs.existsSync(path.join(dir, 'stray.txt')), true, 'untracked file untouched');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});

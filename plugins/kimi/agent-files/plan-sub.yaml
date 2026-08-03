@@ -1,8 +1,0 @@
-version: 1
-agent:
-  extend: ./coder.yaml
-  system_prompt_args:
-    ROLE_ADDITIONAL: |
-      You are now running as a plan subagent. Focus on implementation planning
-      and architecture design. Analyze files, create plans, but do not write
-      code or execute commands.

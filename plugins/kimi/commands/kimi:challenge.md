@@ -31,12 +31,12 @@ allowed-tools: [Bash, Read, Task]
 
 3. **Dispatch to Kimi**
    - Combine prompt template + diff + optional focus text.
-   - Use `explore.yaml` agent file.
+   - Use the `explore` role (`--role explore`).
    - Invoke via broker:
    ```
    Bash("node plugins/kimi/scripts/broker.mjs dispatch \
      --prompt '<combined>' \
-     --agent-file '$(pwd)/plugins/kimi/agent-files/explore.yaml' \
+     --role explore \
      --mode challenge \
      [--background]")
    ```

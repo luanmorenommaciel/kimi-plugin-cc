@@ -32,15 +32,20 @@ test('startBackground spawns kimi with cwd set to the provided repoPath (worktre
   try {
     await startBackground({
       sessionId: 'cwd-test-1',
-      agentFile: '/fake/agent.yaml',
+      role: 'coder',
       prompt: 'p',
       repoPath: tmpRepo,
       spawnFn,
     });
     assert.equal(capturedOpts.cwd, tmpRepo, 'spawn cwd must equal the worktree repoPath');
-    const wIdx = capturedArgs.indexOf('--work-dir');
-    assert.ok(wIdx >= 0, '--work-dir flag must be present');
-    assert.equal(capturedArgs[wIdx + 1], tmpRepo, '--work-dir value must equal repoPath');
+    // Kimi Code 0.x: no --work-dir flag — the repo path travels via spawn cwd.
+    assert.ok(!capturedArgs.includes('--work-dir'), '0.x must not use --work-dir');
+    for (const legacy of ['--print', '--yolo', '--agent-file']) {
+      assert.ok(!capturedArgs.includes(legacy), `0.x must not use ${legacy}`);
+    }
+    assert.deepEqual(capturedArgs.slice(0, 2), ['--output-format', 'stream-json']);
+    const pIdx = capturedArgs.indexOf('-p');
+    assert.ok(pIdx >= 0 && capturedArgs[pIdx + 1] === 'p', 'prompt must follow -p');
   } finally {
     process.env.KIMI_PLUGIN_DATA = prevEnv;
     cleanupTempDir(tmpPlugin);
@@ -60,7 +65,7 @@ test('startBackground does NOT re-resolve repoPath when the caller provides it',
   try {
     const result = await startBackground({
       sessionId: 'cwd-test-2',
-      agentFile: '/fake/agent.yaml',
+      role: 'coder',
       prompt: 'p',
       repoPath: tmpRepo,
       spawnFn,

@@ -5,8 +5,9 @@
 import { readdir } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const ROOT = path.dirname(path.dirname(new URL(import.meta.url).pathname));
+const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 async function findMjsFiles(dir, files = []) {
   const entries = await readdir(dir, { withFileTypes: true });

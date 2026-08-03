@@ -5,8 +5,8 @@ This guide will get you from zero to your first Kimi delegation inside Claude Co
 ## Prerequisites
 
 1. **Claude Code** — installed and running
-2. **Node.js 18.18+** — the broker is a Node.js app
-3. **Kimi CLI** — install with `pip install kimi-cli` or `uv tool install kimi-cli`
+2. **Node.js 20.17+** — the broker is a Node.js app
+3. **Kimi Code CLI 0.x** — install with `npm i -g @moonshot-ai/kimi-code` (legacy `kimi-cli` 1.x users: run `/upgrade` inside it to migrate)
 4. **Kimi account** — sign up at [kimi.ai](https://kimi.ai) and run `kimi login`
 
 ## Install the Plugin
@@ -70,6 +70,19 @@ Then delegate it:
 ```bash
 /kimi:crank tasks/T-my-first-task.md
 ```
+
+The broker manages the task's `status:` field for you: it flips to `in-progress` at dispatch, `completed` on success, and `failed` on failure — which is what `/kimi:crank-batch` and `/kimi:crank-next` use to schedule waves and dependency chains.
+
+Task specs can also pin external documentation to watch and pull in:
+
+```markdown
+external_docs:
+  - https://docs.example.com/quickstart
+  - https://docs.example.com "find all pages about authentication"
+```
+
+A bare URL is baselined and re-checked for changes (via Firecrawl changeTracking). A URL with a quoted instruction is crawled (via Tavily), and the collected pages are injected into the crank's context.
+
 
 ## Explore Before You Change
 

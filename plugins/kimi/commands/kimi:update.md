@@ -24,10 +24,10 @@ allowed-tools: [Bash, Read]
    ```
 
 2. **If behind (`behind: true`)**
+   - `check-update` resolves the plugin repo from the broker's own location and prints the exact command in `update_command` — run that, never a pull in the user's project repo:
    ```
-   Bash("cd $(git rev-parse --show-toplevel) && git pull")
+   Bash("cd \"<plugin-repo-path from update_command>\" && git pull")
    ```
-   - Pull latest changes from origin
    - Verify with `git log --oneline -1`
 
 3. **Reload plugin**

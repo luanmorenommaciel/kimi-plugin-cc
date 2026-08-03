@@ -37,7 +37,7 @@ test('getSessionsDir falls back to HOME when env unset', (t) => {
   assert.ok(dir.endsWith('sessions'));
 });
 
-test('startBackground writes meta.json and pid file', async () => {
+test('startBackground writes meta.json and kimi.pid file', async () => {
   const tmp = makeTempDir();
   const prevEnv = process.env.KIMI_PLUGIN_DATA;
   process.env.KIMI_PLUGIN_DATA = tmp;
@@ -56,7 +56,7 @@ test('startBackground writes meta.json and pid file', async () => {
 
     const result = await startBackground({
       sessionId: 'test-sess-1',
-      agentFile: '/fake/agent.yaml',
+      role: 'coder',
       prompt: 'test prompt',
       model: 'kimi-k2',
       mode: 'crank',
@@ -73,7 +73,9 @@ test('startBackground writes meta.json and pid file', async () => {
     assert.equal(meta.status, 'running');
     assert.equal(meta.mode, 'crank');
 
-    const pidPath = path.join(tmp, 'sessions', 'test-sess-1', 'pid');
+    // The crank's own pid lives in kimi.pid; the session's main `pid` file
+    // belongs to the detached supervisor (written by spawnSupervisor).
+    const pidPath = path.join(tmp, 'sessions', 'test-sess-1', 'kimi.pid');
     assert.equal(fs.existsSync(pidPath), true);
     assert.equal(fs.readFileSync(pidPath, 'utf-8').trim(), '12345');
   } finally {
@@ -118,6 +120,32 @@ test('cancelSession handles missing session gracefully', async () => {
   try {
     const result = await cancelSession('nonexistent-session');
     assert.equal(result.status, 'cancelled');
+  } finally {
+    process.env.KIMI_PLUGIN_DATA = prevEnv;
+    cleanupTempDir(tmp);
+  }
+});
+
+test('cancelSession never downgrades a terminal session', async () => {
+  const tmp = makeTempDir();
+  const prevEnv = process.env.KIMI_PLUGIN_DATA;
+  process.env.KIMI_PLUGIN_DATA = tmp;
+
+  try {
+    const sessDir = path.join(tmp, 'sessions', 'test-sess-done');
+    fs.mkdirSync(sessDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(sessDir, 'meta.json'),
+      JSON.stringify({ session_id: 'test-sess-done', status: 'completed', exit_code: 0 })
+    );
+
+    const result = await cancelSession('test-sess-done');
+    assert.equal(result.status, 'completed');
+    assert.equal(result.already_terminal, true);
+
+    const meta = JSON.parse(fs.readFileSync(path.join(sessDir, 'meta.json'), 'utf-8'));
+    assert.equal(meta.status, 'completed');
+    assert.equal(meta.cancelled_at, undefined);
   } finally {
     process.env.KIMI_PLUGIN_DATA = prevEnv;
     cleanupTempDir(tmp);

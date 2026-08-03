@@ -1,5 +1,72 @@
 # Changelog
 
+## Unreleased
+
+> Hardening sweep over 0.4.0: stricter broker CLI, a detached supervisor for
+> background cranks, safer kills and commits, and doc-accuracy fixes.
+
+### Added
+
+- **Per-command flag allowlists.** Unknown flags fail with a did-you-mean suggestion (Levenshtein ≤ 2); `--help`/`help` exits 0. `status`/`result`/`cancel` also accept a positional session id; `--fresh` + `--resume` is rejected.
+- **Detached background supervisor.** Background dispatch re-execs as an internal `supervise` command; if the supervisor dies, the next broker command reconciles the orphaned session to `status: 'interrupted'`, `reason: 'supervisor-died'` (with salvage commit per the session's auto-commit policy). Crank pid lives in `kimi.pid`, supervisor pid in `pid`.
+- **Foreground stderr capture** — piped to `<sessDir>/kimi.log`, with the tail surfaced in `meta.error` on failure.
+- **Prompt previews in status list** — `prompt_preview` + `prompt_bytes` instead of full prompts; corrupt metas surface as `status: 'corrupt'` and are skipped by `prune` (`skipped_corrupt`).
+
+### Fixed
+
+- **Process-group kills** — cancel/timeout now SIGTERM→SIGKILL the whole process tree, so Kimi-spawned children can't outlive the kill.
+- **Baseline-scoped auto-commit** — with empty `touches_paths`, only paths changed since `baseline_sha` are staged (no `git add -A` sweeps); the commit is skipped when nothing changed since baseline.
+- **Diff capture** uses a 64MB git buffer; `branch-diff` errors clearly on an invalid base ref instead of returning an empty diff.
+- **`check-update`/`update` resolve the plugin repo from the broker's own location** and print an `update_command` pointing at that directory — never the user's cwd repo.
+- **Batch wait deadline** defaults to `KIMI_DISPATCH_TIMEOUT_MS` + 60s; the idle watchdog also treats recent session-file mtime as activity and names `KIMI_IDLE_TIMEOUT_MS`/`KIMI_DISPATCH_TIMEOUT_MS` in its timeout `hint`.
+- **`report --tag`** no longer applies the default 24h window.
+
+## 0.4.0
+
+> The Kimi Code migration. The plugin now targets the new Kimi Code CLI (0.x)
+> — the legacy Python kimi-cli 1.x is detected and rejected with migration
+> guidance. Also ships native resume, real telemetry, K3 thinking effort, a
+> real review gate, and a native Kimi Code plugin distribution.
+
+### Breaking
+
+- **Kimi Code 0.x required.** The broker spawns `kimi -p --output-format stream-json` (no more `--print`/`--yolo`/`--work-dir`/`--agent-file`, none of which exist on 0.x; `--yolo` is rejected with `-p`). Legacy 1.x installs fail fast at dispatch with install/migration steps. Migrate with `npm i -g @moonshot-ai/kimi-code` or `/upgrade` inside the legacy CLI.
+- **Agent YAMLs replaced by roles.** `--agent-file` is gone; dispatches take `--role coder|explore`, composed from `plugins/kimi/roles/*.md` at the head of the prompt. Read-only enforcement for explore is a prompt-level contract (0.x cannot exclude tools headlessly). The meta envelope field `agent_file` is now `role`.
+
+### Added
+
+- **Native session resume.** The real Kimi session id is parsed from the `session.resume_hint` stream-json meta line into `meta.kimi_session_id`; `--resume` continues it via `kimi --session <id>` instead of prompt-text fakery. `/kimi:result` and `/kimi:status` print the `kimi --session <id>` handoff and a `kimi vis <id>` hint.
+- **Real token telemetry.** `telemetry.mjs` parses `usage.record` events from the Kimi session's `wire.jsonl` (`~/.kimi-code/sessions/...`) and marks `estimated: false`; the chars/4 estimate remains as an explicit fallback.
+- **`--effort low|medium|high|xhigh|max`** per dispatch, forced via `KIMI_MODEL_THINKING_EFFORT` (never by editing config).
+- **Context-injection caps are env-configurable** (`KIMI_CTX_CAP_{CONTEXT,DOCS,RESEARCH,PATTERNS}_BYTES`) with K3-sized defaults (16K/8K/4K/6K).
+- **`broker doctor`** — verifies binary generation, `kimi doctor` config validity, auth state (no quota spent), MCP servers, and role prompts.
+- **Real review gate.** `broker review-gate --enable|--disable` wires a Claude Code `Stop` hook running `scripts/review-gate.mjs` (fail-open; blocks the stop when Kimi finds a critical issue). The prompt is no longer orphaned.
+- **Completion notifications** on background-crank close (`KIMI_NOTIFY_CMD`, else osascript/notify-send; never affects session state).
+- **`broker export-debug`** — one-command debug bundle: native `kimi export <id>` when a kimi session id exists, else a tar of the broker session dir.
+- **Native Kimi Code plugin distribution** — root `kimi.plugin.json` + `plugins/kimi-code/` (commands: `/crank:review`, `/crank:challenge`, `/crank:explore`, `/crank:plan`, `/crank:run`; `crank-loop` skill). Install with `/plugins install <github-url>` inside Kimi Code.
+- **`--deep-research`** — Tavily async `/research` task, polled and injected as a cited brief (cap `KIMI_DEEP_RESEARCH_TIMEOUT_MS` / `KIMI_CTX_CAP_DEEP_RESEARCH_BYTES`).
+- **`--docs-provider context7|firecrawl`** — Context7 is the default library-docs source (versioned, LLM-optimized); Firecrawl/Tavily remain as fallbacks.
+- **`--max-cost <usd>`** — live budget watchdog (transcript-growth estimate) on both dispatch paths; breach is terminal with `reason: max-cost` and exit code 6.
+- **`broker prune [--older-than 30d] [--yes]`** — session-dir hygiene; dry-run by default; running sessions spared.
+- **Per-mode effort defaults** — review/challenge/explore run `low`, crank/plan `high`; explicit `--effort` wins; `KIMI_EFFORT_DEFAULTS=off` disables.
+- **Task-status auto-transition** — the broker flips dispatched task files `ready → in-progress → completed|failed` (background cranks transition in the close handler).
+- **Review/challenge output validation** — broker enforces the JSON contracts with one correction retry, then a flagged pass-through (`meta.validation_failed`).
+- **external_docs crawl syntax** — `https://site "instruction"` lines are crawled via Tavily and injected into the prompt; discovered URLs are baselined too.
+- **CLI version floor** — `doctor` warns when Kimi Code < 0.28.0 (native resume/telemetry degrade).
+
+### Fixed
+
+- **External-doc monitoring now uses Firecrawl `changeTracking`** (v2): change detection comes from `changeStatus` with git-diff text and per-field JSON diffs, replacing the weak local hash + string compare.
+
+- Background jobs now get the same wall-clock cap as foreground (`KIMI_DISPATCH_TIMEOUT_MS`), not just the idle watchdog; the two kill paths share one latch.
+- `result` honors `KIMI_PLUGIN_DATA` (was hardcoded to `~/.kimi-plugin-cc`).
+- `getLatestSessionForRepo` no longer falls back to another repo's session.
+- `batch`/`next` no longer hardcode plugin-dev-repo paths (roles resolve relative to the module — marketplace installs work).
+- `context.mjs` applies ALL globs of a scoped rule, not just the first.
+- `codex-bridge`: `APPROVE_COMMIT` is a first-class verdict (longest-first, line-end matching — no more substring accident); `detectCodexCmd` actually probes its candidates.
+- Dead code removed: unreachable `invokeKimi` background branch, unused imports/exports, redundant dynamic imports.
+- Doc drift: Node 20.17 requirement, phantom `--wait` flag removed, broker-command count, "citical" typo, stale `kimi resume` wording, legacy config paths, `kimi-delegate.md` exit-code table (2–6).
+
 ## 0.3.4
 
 > The reliability layer that takes the plugin from 9.4 → 10/10. Closes the last

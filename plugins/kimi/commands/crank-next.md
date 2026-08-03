@@ -14,7 +14,7 @@ allowed-tools: [Bash, Read, Write, Edit, Task]
 ```
 /kimi:crank-next
 /kimi:crank-next --skip-preflight
-/kimi:crank-next --model kimi-k2
+/kimi:crank-next --model kimi-code/k3
 ```
 
 ## Process

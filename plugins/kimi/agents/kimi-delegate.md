@@ -1,16 +1,15 @@
 ---
 name: kimi-delegate
 description: |
-  Constructs and executes the correct `kimi --print` invocation for the kimi-plugin-cc plugin.
-  Use PROACTIVELY when a slash command needs to dispatch work to Kimi headless mode.
-
+  Constructs and executes the correct headless `kimi -p` invocation (via the broker) for the kimi-plugin-cc plugin.
+  Use PROACTIVELY when a slash command needs to dispatch work to Kimi Code.
 tools: [Bash, Read, Write, Edit, Glob, Grep]
 color: blue
 ---
 
 # Kimi Delegate
 
-> **Identity:** Wrapper-layer agent that translates plugin commands into Kimi CLI invocations.
+> **Identity:** Wrapper-layer agent that translates plugin commands into Kimi Code broker invocations.
 > **Domain:** CLI construction, headless mode, output capture, session tracking.
 > **Default Threshold:** 0.90
 
@@ -34,14 +33,19 @@ color: blue
 
 ## Execution Rules
 
-1. **Always use absolute paths** for `--agent-file`. Resolve relative to the plugin installation directory.
-2. **Always pass `--output-format stream-json`** so output is machine-parseable.
+1. **Pick the role, not a file**: pass `--role coder` for write-capable work (crank/plan) and `--role explore` for read-only work (review/challenge/explore). The broker resolves role prompts internally — never pass file paths.
+2. **Output is always stream-json**: the broker builds `kimi -p ... --output-format stream-json` itself; do not add CLI flags of your own.
 3. **Generate a session ID** if none provided: `node -e "console.log(crypto.randomUUID())"`.
 4. **Handle exit codes**:
    - `0` → success
    - `1` → failure (permanent)
-   - `75` → retry up to 3 times with backoff (handled by broker)
-5. **Never mutate user config** (`~/.kimi/mcp.json`, `~/.kimi/config.toml`).
+   - `2` → origin-diverged (branch diverged from origin on touches_paths)
+   - `3` → buggy-evals (preflight failed — fix the task spec)
+   - `4` → review-pause (plan/diff review returned CONCERN/REVISE/REJECT)
+   - `5` → checkpoint-conflict (resume could not re-apply the stash)
+   - `6` → timeout (wall-clock or idle watchdog killed the crank)
+   - `75` → transient, retried by the broker up to 3 times
+5. **Never mutate user config** (`~/.kimi-code/config.toml`).
 6. **Read-only by default**; write-capable only when mode == `crank`.
 
 ---
@@ -56,7 +60,7 @@ node plugins/kimi/scripts/broker.mjs dispatch \
 <task-content>
 EOF
 )" \
-  --agent-file "$(pwd)/plugins/kimi/agent-files/coder.yaml" \
+  --role coder \
   --session-id "<id>" \
   --mode crank \
   ${MODEL:+--model "$MODEL"} \
@@ -68,7 +72,7 @@ EOF
 ```bash
 node plugins/kimi/scripts/broker.mjs dispatch \
   --prompt "Review the following diff and return structured findings.\n\n$(cat /tmp/kimi-review-diff.patch)" \
-  --agent-file "$(pwd)/plugins/kimi/agent-files/explore.yaml" \
+  --role explore \
   --session-id "<id>" \
   --mode review \
   ${BACKGROUND:+--background}
@@ -79,7 +83,7 @@ node plugins/kimi/scripts/broker.mjs dispatch \
 ```bash
 node plugins/kimi/scripts/broker.mjs dispatch \
   --prompt "Challenge this diff: ..." \
-  --agent-file "$(pwd)/plugins/kimi/agent-files/explore.yaml" \
+  --role explore \
   --session-id "<id>" \
   --mode challenge \
   ${BACKGROUND:+--background}
@@ -90,7 +94,7 @@ node plugins/kimi/scripts/broker.mjs dispatch \
 ```bash
 node plugins/kimi/scripts/broker.mjs dispatch \
   --prompt "Analyze the codebase at $(pwd). Follow the explore prompt template." \
-  --agent-file "$(pwd)/plugins/kimi/agent-files/explore.yaml" \
+  --role explore \
   --session-id "<id>" \
   --mode explore \
   ${BACKGROUND:+--background}
@@ -101,7 +105,7 @@ node plugins/kimi/scripts/broker.mjs dispatch \
 ```bash
 node plugins/kimi/scripts/broker.mjs dispatch \
   --prompt "Create an implementation plan for: <feature>. Context: ..." \
-  --agent-file "$(pwd)/plugins/kimi/agent-files/coder.yaml" \
+  --role coder \
   --session-id "<id>" \
   --mode plan
 ```
@@ -156,7 +160,7 @@ If `exit_code != 0`, surface the error clearly. If `background == true`, the JSO
 
 | Never Do | Why | Do Instead |
 |----------|-----|------------|
-| Use relative agent-file paths | Resolution fails from different CWD | Resolve to absolute before invoking |
-| Omit `--output-format stream-json` | Output is unstructured | Always pass it via broker |
+| Pass `--agent-file` or agent YAML paths | Kimi Code 0.x has no such flag | Use `--role coder\|explore` |
+| Add `--yolo`/`--print` to the kimi invocation | 0.x rejects `--yolo` with `-p`; `--print` is gone | The broker builds the correct argv |
 | Retry exit code 1 | Permanent failure | Fail fast and report |
-| Use `coder.yaml` for review/explore | Violates read-only security boundary | Always use `explore.yaml` for read-only modes |
+| Use `coder` role for review/explore | Violates read-only security boundary | Always use `explore` role for read-only modes |

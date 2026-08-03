@@ -1,0 +1,16 @@
+{
+  "name": "crank",
+  "version": "0.4.0",
+  "description": "Crank-loop workflows for Kimi Code — adversarial review, read-only exploration, implementation planning, and task-spec execution",
+  "keywords": ["review", "adversarial", "explore", "plan", "crank", "workflow"],
+  "author": "Luan Moreno Medeiros Maciel",
+  "license": "MIT",
+  "homepage": "https://github.com/luanmorenommaciel/kimi-plugin-cc",
+  "skills": "./plugins/kimi-code/skills/",
+  "commands": "./plugins/kimi-code/commands/",
+  "interface": {
+    "displayName": "Crank Loop",
+    "shortDescription": "Adversarial review, exploration, planning, and task-spec execution workflows",
+    "longDescription": "The crank-loop methodology packaged as native Kimi Code slash commands: /crank:review for structured reviews, /crank:challenge for adversarial design review, /crank:explore for read-only codebase analysis, /crank:plan for implementation planning, and /crank:run to execute tasks/T-*.md specs."
+  }
+}

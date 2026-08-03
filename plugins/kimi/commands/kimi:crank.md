@@ -1,7 +1,7 @@
 ---
 name: kimi:crank
 description: Delegate a task file to Kimi for execution. Write-capable. Supports resume, model override, auto-commit policy, and Codex review hooks.
-argument-hint: <path-to-task-md> [--background] [--model <model>] [--resume] [--fresh] [--auto-commit on|off|on-clean] [--plan-review] [--diff-review] [--force-dispatch] [--skip-preflight] [--no-context]
+argument-hint: <path-to-task-md> [--background] [--model <model>] [--resume] [--fresh] [--effort low|medium|high|xhigh|max] [--max-cost <usd>] [--deep-research] [--docs-provider context7|firecrawl] [--auto-commit on|off|on-clean] [--plan-review] [--diff-review] [--force-dispatch] [--skip-preflight] [--no-context] [--task-path <path>] [--touches-paths <csv>]
 allowed-tools: [Bash, Read, Write, Edit, Task]
 ---
 
@@ -14,7 +14,7 @@ allowed-tools: [Bash, Read, Write, Edit, Task]
 ```
 /kimi:crank tasks/T-20260526-build-kimi-plugin-cc.md
 /kimi:crank tasks/T-20260526-build-kimi-plugin-cc.md --background
-/kimi:crank tasks/T-20260526-build-kimi-plugin-cc.md --model kimi-k2
+/kimi:crank tasks/T-20260526-build-kimi-plugin-cc.md --model kimi-code/k3
 /kimi:crank --resume                # continue latest session for this repo
 /kimi:crank --fresh                 # start new session, ignore latest
 /kimi:crank task.md --auto-commit on-clean
@@ -25,8 +25,8 @@ allowed-tools: [Bash, Read, Write, Edit, Task]
 
 1. **Validate input**
    - Check that the argument path exists and matches `tasks/T-*.md` pattern.
-   - Handle `--resume`: read `.kimi/.session` for latest session ID, prepend "Continue from previous session..." to prompt.
-   - Handle `--fresh`: ignore `.kimi/.session`.
+   - Handle `--resume`: continue the latest repo session natively — the broker passes the stored Kimi session id via `kimi --session <id>`.
+   - Handle `--fresh`: ignore the latest session and start clean (`--fresh` and `--resume` are mutually exclusive).
 
 2. **Pre-flight gates**
    - Origin-state check: fetch origin, abort if touched paths diverged (override with `--force-dispatch`).
@@ -51,13 +51,17 @@ allowed-tools: [Bash, Read, Write, Edit, Task]
    ```
    Bash("node plugins/kimi/scripts/broker.mjs dispatch \
      --prompt '<task_content>' \
-     --agent-file '$(pwd)/plugins/kimi/agent-files/coder.yaml' \
+     --role coder \
      --session-id <id> \
      --mode crank \
+     --task-path <task-path> \
+     --touches-paths <csv-from-spec> \
      [--background] \
      [--model <model>] \
+     [--effort low|medium|high|xhigh|max] \
      [--auto-commit on|off|on-clean]")
    ```
+   - Always pass `--task-path` and `--touches-paths` — omitting them silently disables the origin-divergence check, the preflight buggy-evals gate, context injection, research/patterns/deep-research injection, and `--plan-review`.
 
 7. **Capture post-run diff** (foreground only)
    ```
@@ -74,8 +78,14 @@ allowed-tools: [Bash, Read, Write, Edit, Task]
 
 ## Notes
 
-- Uses `coder.yaml` → write-capable, scoped to working directory.
-- `--resume` continues the latest repo session; `--fresh` starts clean.
+- Uses the `coder` role → write-capable, scoped to working directory.
+- `--resume` continues the latest repo session natively (`kimi --session <id>`); `--fresh` starts clean.
+- `--effort` forces a thinking-effort level for the run (accepts `low`/`medium`/`high`/`xhigh`/`max`; it is applied via `KIMI_MODEL_THINKING_EFFORT`, never by editing your config). Without it, crank defaults to `high`, read-only modes to `low`.
+- `--max-cost <usd>` kills the crank when its estimated live cost crosses the budget (reason `max-cost`, exit code 6).
+- `--deep-research` injects a cited Tavily research brief (async task, polled with a 4-minute cap) before cranking.
+- `--docs-provider context7|firecrawl` picks the library-docs source (Context7 default).
+- Task spec `external_docs:` lines accept `https://site "instruction"` for a Tavily crawl injected into context.
+- The broker flips the task file's `status:` (`in-progress` → `completed`/`failed`) automatically.
 - `--auto-commit` policies: `on` (always commit), `off` (never commit), `on-clean` (default: commit only if evals pass on first try).
 
 ## Exit codes

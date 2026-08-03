@@ -10,10 +10,6 @@ export async function findRepoRoot(start = process.cwd()) {
   });
 }
 
-export async function getRepoSessionFile(repoPath) {
-  return path.join(repoPath, '.kimi', '.session');
-}
-
 export async function readRepoSession(repoPath) {
   try {
     const { readFile } = await import('node:fs/promises');

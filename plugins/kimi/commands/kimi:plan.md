@@ -1,7 +1,7 @@
 ---
 name: kimi:plan
-description: Generate a structured implementation plan using Kimi's native plan subagent. No shell, no write tools.
-argument-hint: <feature-description> [--output html]
+description: Generate a structured implementation plan via the broker's plan mode. Read-only by prompt contract.
+argument-hint: <feature-description>
 allowed-tools: [Bash, Read, Task]
 ---
 
@@ -13,7 +13,6 @@ allowed-tools: [Bash, Read, Task]
 
 ```
 /kimi:plan "Add OAuth2 authentication"
-/kimi:plan "Add OAuth2 authentication" --output html
 ```
 
 ## Process
@@ -23,19 +22,18 @@ allowed-tools: [Bash, Read, Task]
    - Identify extension points, hooks, and existing patterns.
 
 2. **Dispatch to Kimi**
-   - Use `plan` subagent via `coder.yaml` with `plan-sub.yaml`.
+   - Use `--role coder` with `--mode plan` — the prompt instructs planning only, no file changes.
    - Prompt includes feature description + gathered context.
    ```
    Bash("node plugins/kimi/scripts/broker.mjs dispatch \
      --prompt 'Create an implementation plan for: <feature>. Context: ...' \
-     --agent-file '$(pwd)/plugins/kimi/agent-files/coder.yaml' \
+     --role coder \
      --mode plan")
    ```
 
 3. **Render plan**
    - Parse structured output.
-   - If `--output html`, generate a visual plan page with state machine, API design, edge cases.
-   - Otherwise, output markdown.
+   - Output as markdown.
 
 ## Output
 
@@ -47,5 +45,5 @@ allowed-tools: [Bash, Read, Task]
 
 ## Notes
 
-- Uses `plan` subagent: no Shell, no WriteFile. Pure planning.
+- Planning is enforced by the prompt (`--mode plan`), not by tool exclusion — Kimi Code 0.x cannot exclude tools headlessly.
 - Can be fed into `/kimi:crank` for execution.

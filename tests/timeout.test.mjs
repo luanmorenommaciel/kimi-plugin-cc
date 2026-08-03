@@ -33,7 +33,7 @@ test('invokeKimi hard-timeout kills a hung kimi and returns timedOut with sentin
   try {
     const result = await invokeKimi({
       prompt: 'hang',
-      agentFile: '/fake/agent.yaml',
+      role: 'coder',
       sessionId: 'timeout-test-1',
       background: false,
       cwd: tmpPlugin,
@@ -61,7 +61,7 @@ test('invokeKimi survives a synchronous spawn error (missing binary) without TDZ
   try {
     const result = await invokeKimi({
       prompt: 'x',
-      agentFile: '/fake/agent.yaml',
+      role: 'coder',
       sessionId: 'enoent-test-1',
       background: false,
       cwd: tmpPlugin,
@@ -85,11 +85,13 @@ test('broker documents exit code 6 as timeout (not reserved)', () => {
 test('commands.mjs surfaces a timeout as exitCode 6 with status failed/timeout', () => {
   const src = fs.readFileSync(path.join(ROOT, 'plugins/kimi/scripts/lib/commands.mjs'), 'utf-8');
   assert.match(src, /result\.timedOut/);
-  assert.match(src, /reason: 'timeout'[^}]*exitCode: 6/s);
+  // reason is 'max-cost' on a budget breach, 'timeout' otherwise; both exit 6.
+  assert.match(src, /timeoutReason === 'max-cost' \? 'max-cost' : 'timeout'/);
+  assert.match(src, /reason, committed: false, exitCode: 6/);
 });
 
 test('waitForSessions actively cancels stuck sessions instead of only warning', () => {
   const src = fs.readFileSync(path.join(ROOT, 'plugins/kimi/scripts/lib/commands.mjs'), 'utf-8');
   const fn = src.slice(src.indexOf('async function waitForSessions'));
-  assert.match(fn.slice(0, 1200), /cancelSession\(id\)/);
+  assert.match(fn.slice(0, 2500), /cancelSession\(id\)/);
 });

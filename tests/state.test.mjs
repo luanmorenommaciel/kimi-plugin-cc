@@ -71,7 +71,7 @@ test('updateMeta preserves the initial 12-field envelope on terminal write', asy
   try {
     const initial = {
       session_id: 'sess-preserve',
-      agent_file: '/fake/agent.yaml',
+      role: 'coder',
       prompt: 'do the thing',
       model: 'kimi-k2',
       started_at: '2026-06-01T18:00:00Z',

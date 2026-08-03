@@ -1,5 +1,30 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+
+/**
+ * Surgically update the `status:` field of a task spec's frontmatter.
+ * Single-line replace inside the --- block only; everything else is
+ * preserved byte-for-byte. Returns false when the file has no status field.
+ *
+ * @param {string} taskPath - absolute path to the task markdown file
+ * @param {string} status - e.g. 'ready' | 'in-progress' | 'completed' | 'failed'
+ * @returns {Promise<boolean>}
+ */
+export async function updateTaskStatus(taskPath, status) {
+  let content;
+  try {
+    content = await readFile(taskPath, 'utf-8');
+  } catch {
+    return false;
+  }
+  const fm = content.match(/^(---\n[\s\S]*?\n---)/);
+  if (!fm) return false;
+  const block = fm[1];
+  if (!/^status:\s*.+$/m.test(block)) return false;
+  const updated = block.replace(/^status:\s*.+$/m, `status: ${status}`);
+  await writeFile(taskPath, updated + content.slice(block.length));
+  return true;
+}
 
 /**
  * Build an execution graph from task files.

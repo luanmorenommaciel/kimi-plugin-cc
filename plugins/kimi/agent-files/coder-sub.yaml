@@ -1,7 +1,0 @@
-version: 1
-agent:
-  extend: ./coder.yaml
-  system_prompt_args:
-    ROLE_ADDITIONAL: |
-      You are now running as a coder subagent. Focus on implementation tasks:
-      reading files, writing code, running tests, and fixing bugs.

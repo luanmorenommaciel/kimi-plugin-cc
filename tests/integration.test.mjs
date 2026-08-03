@@ -43,7 +43,7 @@ test('startBackground end-to-end with mock spawn', async () => {
 
     const result = await startBackground({
       sessionId: 'integ-test-1',
-      agentFile: '/fake/agent.yaml',
+      role: 'coder',
       prompt: 'test prompt',
       model: 'kimi-k2',
       mode: 'crank',
@@ -78,7 +78,7 @@ test('startBackground end-to-end with mock spawn', async () => {
     assert.equal(meta2.exit_code, 0);
     assert.ok(meta2.finished_at);
     assert.equal(meta2.session_id, 'integ-test-1');
-    assert.equal(meta2.agent_file, '/fake/agent.yaml');
+    assert.equal(meta2.role, 'coder');
     assert.equal(meta2.prompt, 'test prompt');
     assert.equal(meta2.model, 'kimi-k2');
     assert.equal(meta2.mode, 'crank');
@@ -118,7 +118,7 @@ test('startBackground close-handler marks failed and preserves envelope on non-z
 
     await startBackground({
       sessionId: 'integ-test-fail',
-      agentFile: '/fake/agent.yaml',
+      role: 'coder',
       prompt: 'will fail',
       model: 'kimi-k2',
       mode: 'crank',
@@ -154,7 +154,7 @@ test('cancelSession preserves the envelope when marking cancelled', async () => 
     fs.mkdirSync(sessDir, { recursive: true });
     const initial = {
       session_id: 'integ-cancel-preserve',
-      agent_file: '/fake/agent.yaml',
+      role: 'coder',
       prompt: 'pre-cancel prompt',
       model: 'kimi-k2',
       started_at: '2026-06-01T18:00:00Z',

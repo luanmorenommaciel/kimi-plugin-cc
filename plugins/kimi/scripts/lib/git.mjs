@@ -11,14 +11,27 @@ function getPluginRoot() {
 
 function runGit(args, cwd) {
   return new Promise((resolve, reject) => {
-    execFile('git', args, { cwd, encoding: 'utf-8' }, (err, stdout, stderr) => {
-      if (err && !stdout) {
+    // Large diffs are the norm for cranks — the 1MB default silently
+    // truncated them. Reject on ANY non-zero exit/kill; callers decide how
+    // to degrade (and must warn when they fall back to '').
+    execFile('git', args, { cwd, encoding: 'utf-8', maxBuffer: 64 * 1024 * 1024 }, (err, stdout, stderr) => {
+      if (err) {
         reject(new Error(stderr || err.message));
       } else {
         resolve(stdout);
       }
     });
   });
+}
+
+/** Degrade a git failure to '' for diff capture, but never silently. */
+async function diffOrEmpty(promise) {
+  try {
+    return await promise;
+  } catch (e) {
+    await warn('git', e, 'warning');
+    return '';
+  }
 }
 
 /**
@@ -28,25 +41,26 @@ export async function captureDiff(sessionId, phase, repoPath = process.cwd()) {
   const sessDir = path.join(getPluginRoot(), 'sessions', sessionId);
   await mkdir(sessDir, { recursive: true });
 
-  const diff = await runGit(['diff', 'HEAD'], repoPath).catch(() => '');
-  const status = await runGit(['status', '--short'], repoPath).catch(() => '');
+  const diff = await diffOrEmpty(runGit(['diff', 'HEAD'], repoPath));
+  const status = await diffOrEmpty(runGit(['status', '--short'], repoPath));
 
   await writeFile(path.join(sessDir, `${phase}.diff`), diff);
   await writeFile(path.join(sessDir, `${phase}.status`), status);
 }
 
 /**
- * Get diff against a base ref.
+ * Get diff against a base ref. Throws on git failure (e.g. an invalid ref)
+ * so callers can surface the error instead of emitting an empty diff.
  */
 export async function getBranchDiff(baseRef, repoPath = process.cwd()) {
-  return runGit(['diff', `${baseRef}...HEAD`], repoPath).catch(() => '');
+  return runGit(['diff', `${baseRef}...HEAD`], repoPath);
 }
 
 /**
  * Get diff of uncommitted changes.
  */
 export async function getWorkingDiff(repoPath = process.cwd()) {
-  return runGit(['diff'], repoPath).catch(() => '');
+  return diffOrEmpty(runGit(['diff'], repoPath));
 }
 
 /**

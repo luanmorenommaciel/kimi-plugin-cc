@@ -6,8 +6,8 @@ Thank you for your interest in contributing! This document covers how to set up 
 
 ### Prerequisites
 
-- Node.js 18.18 or later
-- Kimi CLI v1.44.0 or later (`pip install kimi-cli`)
+- Node.js 20.17 or later
+- Kimi Code CLI 0.x (`npm i -g @moonshot-ai/kimi-code`, or the native installer from [kimi.com/code](https://www.kimi.com/code))
 - Git
 
 ### Clone and Install
@@ -28,24 +28,29 @@ kimi-plugin-cc/
 │   └── workflows/
 │       └── ci.yml
 ├── docs/                    # Documentation
-│   └── getting-started/
+│   ├── getting-started.md
+│   └── crank-loop-blueprint.md
 ├── plugins/kimi/            # Plugin source (distributed)
 │   ├── .claude-plugin/
 │   │   └── plugin.json      # Plugin manifest
 │   ├── agents/              # Agent definitions for Claude
-│   ├── agent-files/         # Kimi CLI agent YAML configs
+│   ├── roles/               # Role system prompts (coder, explore) composed into dispatches
 │   ├── commands/            # Slash command definitions
 │   ├── hooks/               # Claude Code hooks
 │   ├── prompts/             # Reusable prompt templates
 │   ├── schemas/             # JSON schemas for structured output
 │   ├── scripts/             # Broker + lib modules
 │   │   ├── broker.mjs       # Central dispatch entry point
-│   │   └── lib/             # 6 library modules
+│   │   └── lib/             # Broker library modules (one responsibility per file)
 │   └── skills/              # Reusable skills
+├── plugins/kimi-code/       # Native Kimi Code plugin (dual distribution)
+├── scripts/                 # Repo tooling (release.mjs, lint.mjs)
+├── tasks/                   # This repo's own dev task specs (T-*.md)
 ├── tests/                   # Test suite
 │   ├── *.test.mjs           # Unit tests (Node.js built-in test runner)
 │   ├── smoke.sh             # End-to-end smoke test
 │   └── fixtures/            # Test fixtures
+├── kimi.plugin.json         # Kimi Code plugin manifest
 ├── CHANGELOG.md
 ├── CONTRIBUTING.md
 ├── LICENSE
@@ -97,7 +102,7 @@ claude --plugin-dir /path/to/kimi-plugin-cc/plugins/kimi
 2. Add front matter with `name`, `description`, `argument-hint`, and `allowed-tools`
 3. Document the command in `README.md`
 4. Add handling in `plugins/kimi/scripts/broker.mjs`
-5. Add tests in `tests/commands.test.mjs`
+5. Add tests following the existing pattern — e.g. `tests/broker.test.mjs` for dispatch behavior or `tests/arg-validation.test.mjs` for flag handling
 6. Update `CHANGELOG.md`
 
 ## Adding a New Prompt Template
@@ -108,17 +113,23 @@ claude --plugin-dir /path/to/kimi-plugin-cc/plugins/kimi
 
 ## Release Process
 
-1. Update version in:
-   - `package.json`
-   - `.claude-plugin/marketplace.json`
-   - `plugins/kimi/.claude-plugin/plugin.json`
-   - `plugins/kimi/commands/kimi:setup.md` (if version is mentioned there)
-2. Add release notes to `CHANGELOG.md`
-3. Run the full test suite: `npm test && npm run smoke`
-4. Commit: `git commit -am "release: vX.Y.Z"`
-5. Tag: `git tag vX.Y.Z`
-6. Push: `git push && git push --tags`
-7. The marketplace will pick up the new version automatically
+Releases are driven by `scripts/release.mjs`:
+
+```bash
+npm run release:dry   # dry run — all checks, no changes
+npm run release       # full validation (+ optional --bump / --tag / publish)
+```
+
+The script validates, in order: clean git working tree, `.mjs` syntax lint, unit + integration tests, plugin manifest validation, a broker CLI smoke test, agent/command file validation, and an `npm pack` dry-run. Use `node scripts/release.mjs --bump <patch|minor|major> [--tag]` for the version bump and git tag.
+
+When bumping manually, the version lives in four files — keep them in sync:
+
+- `package.json`
+- `plugins/kimi/.claude-plugin/plugin.json`
+- `.claude-plugin/marketplace.json`
+- `kimi.plugin.json`
+
+Then add release notes to `CHANGELOG.md` (and `plugins/kimi/CHANGELOG.md`), commit, tag `vX.Y.Z`, and push. The marketplace picks up the new version automatically.
 
 ## Security
 

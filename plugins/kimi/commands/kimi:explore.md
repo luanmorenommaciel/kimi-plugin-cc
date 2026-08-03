@@ -1,7 +1,7 @@
 ---
 name: kimi:explore
-description: Deep codebase exploration using Kimi's native explore subagent. Produces Executive Summary, Health Score, and Architecture Deep Dive.
-argument-hint: [--background] [--output html]
+description: Deep codebase exploration via the broker's read-only --role explore. Produces Executive Summary, Health Score, and Architecture Deep Dive.
+argument-hint: <question> [--background]
 allowed-tools: [Bash, Read, Task]
 ---
 
@@ -12,9 +12,10 @@ allowed-tools: [Bash, Read, Task]
 ## Usage
 
 ```
-/kimi:explore
-/kimi:explore --background
-/kimi:explore --output html
+/kimi:explore how does the auth module work?
+/kimi:explore find all database connection code
+/kimi:explore --background give me an architecture overview
+/kimi:explore                     # generic analysis when no question is given
 ```
 
 ## Process
@@ -25,20 +26,20 @@ allowed-tools: [Bash, Read, Task]
    ```
 
 2. **Dispatch to Kimi**
-   - Prompt: "Analyze the codebase at $(pwd) and produce a structured report."
-   - Use `explore.yaml` agent file.
+   - The free-text question is the primary input; when no question is given, fall back to a generic codebase analysis.
+   - Use the `explore` role (`--role explore`).
    ```
    Bash("node plugins/kimi/scripts/broker.mjs dispatch \
-     --prompt 'Analyze the codebase at $(pwd). Follow the explore prompt template.' \
-     --agent-file '$(pwd)/plugins/kimi/agent-files/explore.yaml' \
+     --prompt '<question>' \
+     --role explore \
      --mode explore \
      [--background]")
    ```
+   Fallback prompt when no question: "Analyze the codebase at $(pwd). Follow the explore prompt template."
 
 3. **Parse and render**
    - Parse JSON output for `summary`, `healthScore`, `techStack`, `insights`, `architecture`.
-   - If `--output html`, generate a visual explainer HTML page.
-   - Otherwise, render markdown report.
+   - Render as a markdown report.
 
 ## Output
 
@@ -55,5 +56,5 @@ allowed-tools: [Bash, Read, Task]
 
 ## Notes
 
-- Uses Kimi's native `explore` subagent — fast, read-only, scoped.
-- Inspired by `.claude/agents/exploration/codebase-explorer.md`.
+- Runs under the broker's `--role explore`: the read-only role prompt in `plugins/kimi/roles/explore.md` is composed into the head of the `-p` prompt (`--agent-file` YAMLs no longer exist in Kimi Code 0.x).
+- Read-only enforcement is a prompt-level contract — 0.x cannot exclude tools headlessly.

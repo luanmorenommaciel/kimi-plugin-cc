@@ -1,6 +1,10 @@
 import { warn } from './warn.mjs';
 
-const PATTERNS_CAP_BYTES = 3 * 1024; // 3KB cap
+// 6KB default patterns cap (K3 1M context); override with
+// KIMI_CTX_CAP_PATTERNS_BYTES.
+function patternsCapBytes() {
+  return Number(process.env.KIMI_CTX_CAP_PATTERNS_BYTES || 6 * 1024);
+}
 
 /**
  * Search for real-world code patterns via Exa semantic search.
@@ -46,7 +50,7 @@ export async function searchPatterns(keywords) {
 
     let assembled = '=== CODE PATTERNS (read-only reference) ===\n\n';
     for (const b of blocks) {
-      if (assembled.length + b.length > PATTERNS_CAP_BYTES) {
+      if (assembled.length + b.length > patternsCapBytes()) {
         assembled += '\n... (truncated)\n';
         break;
       }
